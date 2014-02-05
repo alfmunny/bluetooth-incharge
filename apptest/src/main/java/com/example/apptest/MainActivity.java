@@ -27,6 +27,9 @@ import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+
 /**
  * This is the main Activity that displays the current chat session.
  */
@@ -42,6 +45,15 @@ public class MainActivity extends Activity {
     public static final int MESSAGE_DEVICE_NAME = 4;
     public static final int MESSAGE_TOAST = 5;
 
+    // Message content sent from the BluetoothService
+    public static final int MESSAGE_SOC = 1;
+    public static final int MESSAGE_MAX_TEMPERATURE = 2;
+    public static final int MESSAGE_MIN_TEMPERATURE = 3;
+    public static final int MESSAGE_VOLTAGE = 4;
+    public static final int MESSAGE_CURRENT = 5;
+
+
+
     // Key names received from the BluetoothChatService Handler
     public static final String DEVICE_NAME = "device_name";
     public static final String TOAST = "toast";
@@ -51,15 +63,43 @@ public class MainActivity extends Activity {
     private static final int REQUEST_CONNECT_DEVICE_INSECURE = 2;
     private static final int REQUEST_ENABLE_BT = 3;
 
+    // Information of the incoming data.
+
+    // ID for the data of the SOC (state of charge) and Battery Cell Minimum Temperature and Battery Cell Maximum Temperature of the Battery
+    private static final String ID_SOC_TEMPERATURE = "0161";
+    private static final int LENGTH_ID_SOC_TEMPERATURE= 14;
+
+    // ID for the data of the current and voltage of the Battery
+    private static final String ID_VOLTAGE_CURRENT = "0326";
+    private static final int LENGTH_ID_VOLTAGE_CURRENT = 16;
+
+
     // Layout Views
-    private ListView mConversationView;
+    //private ListView mConversationView;
+    //private ListView socView;
+    //private ListView maxTempView;
+    //private ListView minTempView;
+    //private ListView voltageView;
+    //private ListView currentView;
+
+    private TextView socView;
+    private TextView maxTempView;
+    private TextView minTempView;
+    private TextView voltageView;
+    private TextView currentView;
+
     private EditText mOutEditText;
     private Button mSendButton;
 
     // Name of the connected device
     private String mConnectedDeviceName = null;
     // Array adapter for the conversation thread
-    private ArrayAdapter<String> mConversationArrayAdapter;
+    //private ArrayAdapter<String> mConversationArrayAdapter;
+    private ArrayAdapter<String> socArrayAdapter;
+    private ArrayAdapter<String> maxTempArrayAdapter;
+    private ArrayAdapter<String> minTempArrayAdapter;
+    private ArrayAdapter<String> voltageArrayAdapter;
+    private ArrayAdapter<String> currentArrayAdapter;
     // String buffer for outgoing messages
     private StringBuffer mOutStringBuffer;
     // Local Bluetooth adapter
@@ -124,30 +164,52 @@ public class MainActivity extends Activity {
         Log.d(TAG, "setupChat()");
 
         // Initialize the array adapter for the conversation thread
-        mConversationArrayAdapter = new ArrayAdapter<String>(this, R.layout.message);
-        mConversationView = (ListView) findViewById(R.id.in);
-        mConversationView.setAdapter(mConversationArrayAdapter);
+        //mConversationArrayAdapter = new ArrayAdapter<String>(this, R.layout.message);
+        socArrayAdapter = new ArrayAdapter<String>(this, R.layout.message);
+        maxTempArrayAdapter = new ArrayAdapter<String>(this, R.layout.message);
+        minTempArrayAdapter = new ArrayAdapter<String>(this, R.layout.message);
+        voltageArrayAdapter = new ArrayAdapter<String>(this, R.layout.message);
+        currentArrayAdapter = new ArrayAdapter<String>(this, R.layout.message);
+
+        //socView = (ListView) findViewById(R.id.stateOfCharge);
+        //maxTempView = (ListView) findViewById(R.id.maxTemperature);
+        //minTempView = (ListView) findViewById(R.id.minTemperature);
+        //voltageView = (ListView) findViewById(R.id.voltage);
+        //currentView = (ListView) findViewById(R.id.current);
+
+        socView = (TextView) findViewById(R.id.textView);
+        maxTempView = (TextView) findViewById(R.id.textView2);
+        minTempView = (TextView) findViewById(R.id.textView3);
+        voltageView = (TextView) findViewById(R.id.textView4);
+        currentView = (TextView) findViewById(R.id.textView5);
+
+       // socView.setAdapter(socArrayAdapter);
+       // maxTempView.setAdapter(maxTempArrayAdapter);
+       // minTempView.setAdapter(minTempArrayAdapter);
+       // voltageView.setAdapter(voltageArrayAdapter);
+       // currentView.setAdapter(currentArrayAdapter);
 
         // Initialize the compose field with a listener for the return key
-        mOutEditText = (EditText) findViewById(R.id.edit_text_out);
-        mOutEditText.setOnEditorActionListener(mWriteListener);
+        //mOutEditText = (EditText) findViewById(R.id.edit_text_out);
+        //mOutEditText.setOnEditorActionListener(mWriteListener);
 
         // Initialize the send button with a listener that for click events
-        mSendButton = (Button) findViewById(R.id.button_send);
-        mSendButton.setOnClickListener(new View.OnClickListener() {
+        //mSendButton = (Button) findViewById(R.id.button_send);
+/*        mSendButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 // Send a message using content of the edit text widget
                 TextView view = (TextView) findViewById(R.id.edit_text_out);
                 String message = view.getText().toString();
                 sendMessage(message);
             }
-        });
+        });*/
 
         // Initialize the BluetoothChatService to perform bluetooth connections
         mChatService = new BluetoothChatService(this, mHandler);
 
         // Initialize the buffer for outgoing messages
         mOutStringBuffer = new StringBuffer("");
+
     }
 
     @Override
@@ -227,6 +289,7 @@ public class MainActivity extends Activity {
         actionBar.setSubtitle(subTitle);
     }
 
+
     // The Handler that gets information back from the BluetoothChatService
     private final Handler mHandler = new Handler() {
         @Override
@@ -237,7 +300,12 @@ public class MainActivity extends Activity {
                     switch (msg.arg1) {
                         case BluetoothChatService.STATE_CONNECTED:
                             setStatus(getString(R.string.title_connected_to, mConnectedDeviceName));
-                            mConversationArrayAdapter.clear();
+                            //mConversationArrayAdapter.clear();
+                            socArrayAdapter.clear();
+                            maxTempArrayAdapter.clear();
+                            minTempArrayAdapter.clear();
+                            voltageArrayAdapter.clear();
+                            currentArrayAdapter.clear();
                             break;
                         case BluetoothChatService.STATE_CONNECTING:
                             setStatus(R.string.title_connecting);
@@ -248,19 +316,17 @@ public class MainActivity extends Activity {
                             break;
                     }
                     break;
-                case MESSAGE_WRITE:
-                    byte[] writeBuf = (byte[]) msg.obj;
-                    // construct a string from the buffer
-                    String writeMessage = new String(writeBuf);
-                    mConversationArrayAdapter.add("Me:  " + writeMessage);
-                    break;
                 case MESSAGE_READ:
                     byte[] readBuf = (byte[]) msg.obj;
                     String full_message = bytesToHex(readBuf);
-                    String idTempAndSoc = "0161";
-                    if (findMessageId(full_message, idTempAndSoc))
+                    if (findMessage(full_message, ID_SOC_TEMPERATURE) > 0)
                     {
-                    mConversationArrayAdapter.add(idTempAndSoc+":  " + messageContent(full_message, idTempAndSoc, 14));
+                        socView.setText(messageUpdate(full_message, findMessage(full_message, ID_SOC_TEMPERATURE), MESSAGE_SOC) + " %");
+                        maxTempView.setText(messageUpdate(full_message, findMessage(full_message, ID_SOC_TEMPERATURE), MESSAGE_MAX_TEMPERATURE) + " °C");
+                        minTempView.setText(messageUpdate(full_message, findMessage(full_message, ID_SOC_TEMPERATURE), MESSAGE_MIN_TEMPERATURE) + " °C");
+                    } else if ( findMessage(full_message, ID_VOLTAGE_CURRENT) > 0) {
+                        voltageView.setText(messageUpdate(full_message, findMessage(full_message, ID_VOLTAGE_CURRENT), MESSAGE_VOLTAGE) + " V");
+                        currentView.setText(messageUpdate(full_message, findMessage(full_message, ID_VOLTAGE_CURRENT), MESSAGE_CURRENT) + " A");
                     }
                     break;
                 case MESSAGE_DEVICE_NAME:
@@ -278,30 +344,6 @@ public class MainActivity extends Activity {
     };
     final protected static char[] hexArray = "0123456789ABCDEF".toCharArray();
 
-    public boolean findMessageId (String messageBuf, String address) {
-        int i;
-        for ( i = 0 ; i < messageBuf.length() - 20; i ++ )
-        {
-            if (messageBuf.substring(i, i + 4).equals(address))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    public static String messageContent (String messageBuf, String address, int msgLength) {
-        int i;
-        for ( i = 0 ; i < messageBuf.length() - 20; i ++ )
-        {
-            if (messageBuf.substring(i, i + 4).equals(address) )
-            {
-                break;
-            }
-        }
-        return messageBuf.substring(i + 4, i + 4 + msgLength);
-    }
-
     public static String bytesToHex(byte [] bytes) {
         char[] hexChars = new char[bytes.length * 2];
         for ( int j = 0; j < bytes.length; j++) {
@@ -310,6 +352,61 @@ public class MainActivity extends Activity {
             hexChars[j * 2 + 1] = hexArray [v & 0x0F];
         }
         return new String(hexChars);
+    }
+
+    public int findMessage (String messageBuf, String address) {
+        int i;
+        for ( i = 0 ; i < 10; i ++ )
+        {
+            if (messageBuf.substring(i, i + 4).equals(address))
+            {
+                return i + 4;
+            }
+        }
+        return 0;
+    }
+
+    public static String messageUpdate (String messageBuf, int messagePosition, int messageToUpdate) {
+        // full message of one address, which contains several parameter messages
+        String full_message;
+        double message_value = 0;
+        switch (messageToUpdate) {
+            // the message contains soc, max temperature and min temperature
+            case MESSAGE_SOC:
+                full_message = messageBuf.substring(messagePosition, messagePosition + LENGTH_ID_SOC_TEMPERATURE);
+                // message of soc is at the 4th byte of the byte string
+                // resolution: 1.2 Offset: 0
+                message_value = Integer.parseInt(full_message.substring(6, 8), 16) * 1.2;
+                break;
+            case MESSAGE_MAX_TEMPERATURE:
+                full_message = messageBuf.substring(messagePosition, messagePosition + LENGTH_ID_SOC_TEMPERATURE);
+                // message of max temperature is at the 7th byte of the byte string
+                // resolution: 1.0 Offset: -50
+                message_value = Integer.parseInt(full_message.substring(12, 14), 16) - 50;
+                break;
+            case MESSAGE_MIN_TEMPERATURE:
+                full_message = messageBuf.substring(messagePosition, messagePosition + LENGTH_ID_SOC_TEMPERATURE);
+                // message of min temperature is at the 3th byte of the byte string
+                // resolution: 1.0 Offset: -50
+                message_value = Integer.parseInt(full_message.substring(4, 6), 16) - 50;
+                break;
+            // the message contains voltage and current
+            case MESSAGE_VOLTAGE:
+                full_message = messageBuf.substring(messagePosition, messagePosition + LENGTH_ID_VOLTAGE_CURRENT);
+                // message of min temperature is at the 7.7 ~ 8.0 byte of the byte string
+                // resolution: 0.1  Offset: 0V
+                message_value = Integer.parseInt(full_message.substring(12, 16), 16) * 0.1;
+                break;
+            case MESSAGE_CURRENT:
+                full_message = messageBuf.substring(messagePosition, messagePosition + LENGTH_ID_VOLTAGE_CURRENT);
+                // message of voltage is at the 5.7 ~ 6.0th bit of the byte string
+                // resolution: 0.01 Offset: -327A
+                message_value = Integer.parseInt(full_message.substring(8, 12), 16) * 0.01 - 327;
+                break;
+
+        }
+
+        return String.valueOf(message_value).substring(0, 4);
     }
 
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -374,7 +471,8 @@ public class MainActivity extends Activity {
                 return true;
             case R.id.discoverable:
                 // Ensure this device is discoverable by others
-                ensureDiscoverable();
+                //ensureDiscoverable();
+                mChatService.stop();
                 return true;
         }
         return false;
